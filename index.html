@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VitaScan 360° · 智能健康体测平台</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif; }
+  html,body { height:100%; overflow-x:hidden; background:#040a18; color:#eaf2ff; }
+  ::-webkit-scrollbar { width:8px; } ::-webkit-scrollbar-thumb { background:#1e3a5f; border-radius:4px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+
+  #bg3d { position:fixed; inset:0; z-index:0; }
+  .vignette { position:fixed; inset:0; z-index:1; pointer-events:none;
+    background:radial-gradient(ellipse at 50% 40%, transparent 40%, rgba(2,6,17,.85) 100%); }
+
+  .container { position:relative; z-index:2; min-height:100vh; display:flex; flex-direction:column;
+    align-items:center; padding:40px 20px 80px; }
+
+  /* ===== 顶部导航 ===== */
+  .navbar { width:100%; max-width:1100px; display:flex; align-items:center; justify-content:space-between;
+    padding:14px 26px; border:1px solid rgba(90,160,255,.18); border-radius:16px;
+    background:rgba(8,18,40,.55); backdrop-filter:blur(14px); }
+  .logo { display:flex; align-items:center; gap:10px; font-size:20px; font-weight:700; letter-spacing:1px; }
+  .logo .pulse { width:14px; height:14px; border-radius:50%; background:#19e0ff;
+    box-shadow:0 0 12px #19e0ff, 0 0 30px rgba(25,224,255,.6); animation:pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.35);opacity:.55} }
+  .navtag { font-size:12px; color:#7fa8d9; letter-spacing:3px; }
+
+  /* ===== Hero ===== */
+  .hero { text-align:center; margin-top:80px; max-width:820px; }
+  .hero h1 { font-size:clamp(38px,6vw,68px); line-height:1.15; font-weight:800;
+    background:linear-gradient(120deg,#6ee7ff 0%,#4f8cff 45%,#b18cff 90%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 0 60px rgba(79,140,255,.25); }
+  .hero p { margin-top:22px; color:#9db8dd; font-size:17px; line-height:1.8; }
+  .badges { margin-top:26px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+  .badge { padding:7px 16px; border-radius:999px; font-size:13px; color:#8fd6ff;
+    border:1px solid rgba(110,231,255,.3); background:rgba(110,231,255,.07); }
+  .cta { margin-top:44px; }
+  .btn-glow { position:relative; padding:16px 52px; font-size:18px; font-weight:700; letter-spacing:2px;
+    color:#03111f; background:linear-gradient(120deg,#6ee7ff,#4f8cff); border:none; border-radius:14px;
+    cursor:pointer; transition:transform .25s, box-shadow .25s;
+    box-shadow:0 0 30px rgba(79,140,255,.45), inset 0 0 12px rgba(255,255,255,.35); }
+  .btn-glow:hover { transform:translateY(-3px) scale(1.03); box-shadow:0 0 55px rgba(110,231,255,.7); }
+  .scroll-hint { margin-top:50px; color:#5f7ea8; font-size:13px; animation:bob 2s infinite; }
+  @keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(8px)} }
+
+  /* ===== 通用卡片 ===== */
+  .glass { background:rgba(10,22,48,.62); border:1px solid rgba(90,160,255,.22); border-radius:22px;
+    backdrop-filter:blur(18px); box-shadow:0 18px 60px rgba(0,10,40,.5), inset 0 1px 0 rgba(255,255,255,.06); }
+  .hidden { display:none !important; }
+
+  /* ===== 问卷 ===== */
+  #quizWrap { width:100%; max-width:780px; margin-top:50px; }
+  .progress-outer { height:8px; border-radius:99px; background:rgba(255,255,255,.08); overflow:hidden; margin-bottom:8px; }
+  .progress-inner { height:100%; width:0%; border-radius:99px;
+    background:linear-gradient(90deg,#19e0ff,#4f8cff,#b18cff); transition:width .5s cubic-bezier(.6,0,.2,1);
+    box-shadow:0 0 14px rgba(79,140,255,.8); }
+  .step-label { display:flex; justify-content:space-between; font-size:13px; color:#7fa8d9; margin-bottom:22px; }
+  .step-card { padding:38px 40px; animation:fadeUp .45s ease; }
+  @keyframes fadeUp { from{opacity:0; transform:translateY(26px)} to{opacity:1; transform:translateY(0)} }
+  .step-title { font-size:24px; font-weight:700; margin-bottom:6px; }
+  .step-sub { color:#8aa8cf; font-size:14px; margin-bottom:26px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media (max-width:640px){ .grid2{grid-template-columns:1fr} .step-card{padding:26px 22px} }
+  .field label { display:block; font-size:13px; color:#9db8dd; margin-bottom:7px; }
+  .field input, .field select { width:100%; padding:12px 14px; border-radius:12px; font-size:15px; color:#eaf2ff;
+    background:rgba(255,255,255,.06); border:1px solid rgba(120,170,255,.25); outline:none; transition:border .2s, box-shadow .2s; }
+  .field input:focus, .field select:focus { border-color:#4f8cff; box-shadow:0 0 0 3px rgba(79,140,255,.18); }
+  .field select option { background:#0a1630; }
+  .field .unit { position:relative; }
+  .field .unit input { padding-right:52px; }
+  .field .unit span { position:absolute; right:14px; top:50%; transform:translateY(-50%); color:#5f7ea8; font-size:13px; pointer-events:none; }
+  .step-nav { display:flex; justify-content:space-between; margin-top:32px; }
+  .btn-ghost { padding:12px 30px; border-radius:12px; background:transparent; color:#8fd6ff;
+    border:1px solid rgba(110,231,255,.35); cursor:pointer; font-size:15px; transition:all .2s; }
+  .btn-ghost:hover { background:rgba(110,231,255,.1); }
+  .btn-next { padding:12px 36px; border-radius:12px; border:none; cursor:pointer; font-size:15px; font-weight:700;
+    color:#03111f; background:linear-gradient(120deg,#6ee7ff,#4f8cff); transition:all .2s; }
+  .btn-next:hover { transform:translateY(-2px); box-shadow:0 6px 24px rgba(79,140,255,.5); }
+  .opt-group { display:flex; flex-wrap:wrap; gap:10px; }
+  .opt { padding:10px 18px; border-radius:12px; font-size:14px; cursor:pointer; user-select:none;
+    border:1px solid rgba(120,170,255,.25); background:rgba(255,255,255,.05); transition:all .18s; }
+  .opt:hover { border-color:#4f8cff; }
+  .opt.sel { background:linear-gradient(120deg, rgba(110,231,255,.25), rgba(79,140,255,.3));
+    border-color:#4f8cff; color:#bfe9ff; box-shadow:0 0 12px rgba(79,140,255,.35); }
+
+  /* ===== 结果页 ===== */
+  #resultWrap { width:100%; max-width:1000px; margin-top:50px; animation:fadeUp .6s ease; }
+  .score-hero { display:flex; gap:36px; align-items:center; padding:38px 42px; flex-wrap:wrap; }
+  .score-ring { position:relative; width:190px; height:190px; flex-shrink:0; margin:0 auto; }
+  .score-ring svg { transform:rotate(-90deg); }
+  .score-num { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .score-num b { font-size:52px; background:linear-gradient(120deg,#6ee7ff,#4f8cff);
+    -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .score-num span { font-size:13px; color:#7fa8d9; letter-spacing:2px; }
+  .score-info { flex:1; min-width:260px; }
+  .grade { display:inline-block; padding:6px 20px; border-radius:999px; font-size:15px; font-weight:700; margin-bottom:14px; }
+  .grade.A { background:rgba(64,224,160,.15); color:#3fe0a0; border:1px solid rgba(64,224,160,.4); }
+  .grade.B { background:rgba(110,231,255,.12); color:#6ee7ff; border:1px solid rgba(110,231,255,.4); }
+  .grade.C { background:rgba(255,196,64,.12); color:#ffc44d; border:1px solid rgba(255,196,64,.4); }
+  .grade.D { background:rgba(255,92,122,.12); color:#ff5c7a; border:1px solid rgba(255,92,122,.4); }
+  .score-info p { color:#9db8dd; line-height:1.8; font-size:14.5px; }
+  .vitals { display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
+  .vital-chip { padding:7px 14px; border-radius:10px; font-size:13px; background:rgba(255,255,255,.06);
+    border:1px solid rgba(120,170,255,.2); color:#9db8dd; }
+  .vital-chip b { color:#eaf2ff; }
+  .charts-row { display:grid; grid-template-columns:1fr 1fr; gap:22px; margin-top:22px; }
+  @media (max-width:820px){ .charts-row{grid-template-columns:1fr} }
+  .chart-card { padding:26px; }
+  .chart-card h3 { font-size:16px; margin-bottom:16px; color:#bfe9ff; }
+  .dim-list { display:flex; flex-direction:column; gap:14px; }
+  .dim-row { display:flex; align-items:center; gap:12px; }
+  .dim-row .dname { width:88px; font-size:14px; color:#9db8dd; flex-shrink:0; }
+  .dim-bar { flex:1; height:10px; border-radius:99px; background:rgba(255,255,255,.08); overflow:hidden; }
+  .dim-bar i { display:block; height:100%; width:0; border-radius:99px; transition:width 1.2s cubic-bezier(.5,0,.2,1); }
+  .dim-row .dval { width:38px; text-align:right; font-size:14px; font-weight:700; }
+  .rec-card { margin-top:22px; padding:30px 34px; }
+  .rec-card h3 { font-size:18px; margin-bottom:18px; color:#bfe9ff; }
+  .rec-item { display:flex; gap:12px; padding:12px 0; border-bottom:1px dashed rgba(120,170,255,.15); font-size:14.5px; line-height:1.7; color:#c4d6f0; }
+  .rec-item:last-child { border-bottom:none; }
+  .rec-icon { flex-shrink:0; width:30px; height:30px; border-radius:9px; display:flex; align-items:center; justify-content:center;
+    background:rgba(79,140,255,.15); font-size:15px; }
+  .actions { display:flex; gap:16px; justify-content:center; margin-top:34px; flex-wrap:wrap; }
+  .btn-download { padding:15px 44px; border:none; border-radius:14px; font-size:16px; font-weight:700; cursor:pointer;
+    color:#03111f; background:linear-gradient(120deg,#3fe0a0,#19e0ff); box-shadow:0 0 26px rgba(63,224,160,.35); transition:all .25s; }
+  .btn-download:hover { transform:translateY(-3px); box-shadow:0 0 45px rgba(63,224,160,.6); }
+
+  /* ===== 打印报告（白底专业版） ===== */
+  #reportDoc { position:fixed; left:-9999px; top:0; width:794px; background:#fff; color:#1a2332;
+    padding:48px 52px; font-family:"Microsoft YaHei",sans-serif; }
+  #reportDoc h1 { font-size:26px; color:#0d2b52; border-bottom:3px solid #2b6cb0; padding-bottom:12px; }
+  #reportDoc .rhead { display:flex; justify-content:space-between; align-items:flex-end; }
+  #reportDoc .rmeta { font-size:13px; color:#4a5568; line-height:1.9; text-align:right; }
+  #reportDoc .rsection { margin-top:26px; }
+  #reportDoc .rsection h2 { font-size:17px; color:#0d2b52; border-left:4px solid #2b6cb0; padding-left:10px; margin-bottom:12px; }
+  #reportDoc table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  #reportDoc td, #reportDoc th { border:1px solid #d6dee8; padding:8px 12px; text-align:left; }
+  #reportDoc th { background:#eef4fb; color:#0d2b52; }
+  #reportDoc .rscore { display:flex; gap:20px; align-items:center; margin-top:6px; }
+  #reportDoc .rscore .big { font-size:46px; font-weight:800; color:#2b6cb0; }
+  #reportDoc .rrec { line-height:1.9; font-size:13.5px; color:#2d3748; }
+  #reportDoc .rrec li { margin-left:20px; margin-bottom:6px; }
+  #reportDoc .rdisclaimer { margin-top:30px; font-size:11.5px; color:#718096; border-top:1px solid #e2e8f0; padding-top:12px; }
+  #reportChartWrap { text-align:center; margin-top:8px; }
+  #reportChartWrap img { max-width:380px; }
+
+  .footer-note { margin-top:60px; color:#5f7ea8; font-size:12.5px; text-align:center; line-height:1.8; }
+</style>
+</head>
+<body>
+<canvas id="bg3d"></canvas>
+<div class="vignette"></div>
+
+<div class="container">
+  <!-- 导航 -->
+  <div class="navbar">
+    <div class="logo"><span class="pulse"></span>VitaScan <span style="color:#4f8cff">360°</span></div>
+    <div class="navtag">INTELLIGENT HEALTH ASSESSMENT</div>
+  </div>
+
+  <!-- Hero -->
+  <div class="hero" id="heroSection">
+    <h1>全方位智能健康体测<br>一次沉浸式的身体之旅</h1>
+    <p>基于健康服务与管理的评估模型，从生理指标、生活方式、心理健康、既往史四大维度<br>
+       为您生成专属健康画像与专业体检报告。</p>
+    <div class="badges">
+      <span class="badge">🧬 5 大维度评估</span>
+      <span class="badge">📊 健康画像雷达图</span>
+      <span class="badge">📄 专业 PDF 报告下载</span>
+      <span class="badge">🛡️ 个性化健康建议</span>
+    </div>
+    <div class="cta"><button class="btn-glow" onclick="startQuiz()">开 始 体 测</button></div>
+    <div class="scroll-hint">▼ 全程约 3 分钟 · 数据仅保留在您的浏览器中 ▼</div>
+  </div>
+
+  <!-- 问卷 -->
+  <div id="quizWrap" class="hidden">
+    <div class="progress-outer"><div class="progress-inner" id="progBar"></div></div>
+    <div class="step-label"><span id="progText">第 1 / 5 步</span><span id="progPct">20%</span></div>
+    <div class="glass step-card" id="stepCard"></div>
+  </div>
+
+  <!-- 结果 -->
+  <div id="resultWrap" class="hidden">
+    <div class="glass score-hero">
+      <div class="score-ring">
+        <svg width="190" height="190">
+          <circle cx="95" cy="95" r="82" stroke="rgba(255,255,255,.08)" stroke-width="13" fill="none"/>
+          <circle id="ringFg" cx="95" cy="95" r="82" stroke="url(#gradRing)" stroke-width="13" fill="none"
+                  stroke-linecap="round" stroke-dasharray="515" stroke-dashoffset="515"/>
+          <defs><linearGradient id="gradRing" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#6ee7ff"/><stop offset="100%" stop-color="#4f8cff"/>
+          </linearGradient></defs>
+        </svg>
+        <div class="score-num"><b id="totalScore">--</b><span>综合健康指数</span></div>
+      </div>
+      <div class="score-info">
+        <span class="grade" id="gradeBadge">--</span>
+        <p id="summaryText"></p>
+        <div class="vitals" id="vitalsChips"></div>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="glass chart-card"><h3>🕸️ 五维健康画像</h3><canvas id="radarChart" height="300"></canvas></div>
+      <div class="glass chart-card"><h3>📈 各维度得分</h3><div class="dim-list" id="dimList"></div></div>
+    </div>
+
+    <div class="glass rec-card"><h3>💡 个性化健康建议</h3><div id="recList"></div></div>
+
+    <div class="actions">
+      <button class="btn-download" id="btnPdf">⬇ 下载体检报告 (PDF)</button>
+      <button class="btn-ghost" onclick="location.reload()">↻ 重新体测</button>
+    </div>
+    <div class="footer-note">本报告为健康风险评估参考，不能替代执业医师的临床诊断。<br>如身体出现不适，请及时前往正规医疗机构就诊。</div>
+  </div>
+</div>
+
+<!-- 隐藏的报告模板（用于导出PDF） -->
+<div id="reportDoc"></div>
+
+<script>
+/* ================= 3D 粒子背景（Three.js） ================= */
+(function initBG(){
+  const canvas = document.getElementById('bg3d');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x040a18, 0.0016);
+  const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 2000);
+  camera.position.z = 220;
+
+  // —— DNA 双螺旋粒子 ——
+  const helixGroup = new THREE.Group();
+  const hCount = 2 * 260;
+  const hPos = new Float32Array(hCount * 3);
+  const hCol = new Float32Array(hCount * 3);
+  const cA = new THREE.Color(0x19e0ff), cB = new THREE.Color(0xb18cff), cR = new THREE.Color(0x4f8cff);
+  const turns = 6, height = 500;
+  for (let i = 0; i < 260; i++){
+    const t = i / 260, angle = t * Math.PI * 2 * turns, y = (t - .5) * height;
+    const r = 46;
+    // 链A
+    hPos.set([Math.cos(angle)*r, y, Math.sin(angle)*r], i*3);
+    hCol.set([cA.r, cA.g, cA.b], i*3);
+    // 链B（相位偏移π）
+    const j = 260 + i;
+    hPos.set([Math.cos(angle+Math.PI)*r, y, Math.sin(angle+Math.PI)*r], j*3);
+    hCol.set([cB.r, cB.g, cB.b], j*3);
+  }
+  const hGeo = new THREE.BufferGeometry();
+  hGeo.setAttribute('position', new THREE.BufferAttribute(hPos, 3));
+  hGeo.setAttribute('color', new THREE.BufferAttribute(hCol, 3));
+  const pTex = makeSpriteTex();
+  const helix = new THREE.Points(hGeo, new THREE.PointsMaterial({
+    size:4.2, map:pTex, vertexColors:true, transparent:true, opacity:.95,
+    depthWrite:false, blending:THREE.AdditiveBlending }));
+  helixGroup.add(helix);
+
+  // —— 横梁连接粒子（碱基对） ——
+  const rungPos = [];
+  for (let i = 0; i < 260; i += 10){
+    const t = i / 260, angle = t * Math.PI * 2 * turns, y = (t - .5) * height, r = 46;
+    const ax = Math.cos(angle)*r, az = Math.sin(angle)*r;
+    const bx = Math.cos(angle+Math.PI)*r, bz = Math.sin(angle+Math.PI)*r;
+    for (let s = 1; s < 8; s++){
+      const k = s/8;
+      rungPos.push(ax+(bx-ax)*k, y, az+(bz-az)*k);
+    }
+  }
+  const rGeo = new THREE.BufferGeometry();
+  rGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rungPos), 3));
+  const rungs = new THREE.Points(rGeo, new THREE.PointsMaterial({
+    size:1.8, map:pTex, color:cR, transparent:true, opacity:.6,
+    depthWrite:false, blending:THREE.AdditiveBlending }));
+  helixGroup.add(rungs);
+  helixGroup.position.x = 110;
+  scene.add(helixGroup);
+
+  // —— 漂浮星尘粒子 ——
+  const dCount = 900, dPos = new Float32Array(dCount*3), dSpeed = new Float32Array(dCount);
+  for (let i = 0; i < dCount; i++){
+    dPos[i*3]   = (Math.random()-.5)*900;
+    dPos[i*3+1] = (Math.random()-.5)*700;
+    dPos[i*3+2] = (Math.random()-.5)*600;
+    dSpeed[i] = .08 + Math.random()*.35;
+  }
+  const dGeo = new THREE.BufferGeometry();
+  dGeo.setAttribute('position', new THREE.BufferAttribute(dPos, 3));
+  const dust = new THREE.Points(dGeo, new THREE.PointsMaterial({
+    size:1.6, map:pTex, color:0x6ea8ff, transparent:true, opacity:.55,
+    depthWrite:false, blending:THREE.AdditiveBlending }));
+  scene.add(dust);
+
+  // —— 脉冲光环 ——
+  const ringGeo = new THREE.RingGeometry(70, 72, 80);
+  const ringMat = new THREE.MeshBasicMaterial({ color:0x19e0ff, transparent:true, opacity:.12, side:THREE.DoubleSide });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = Math.PI/2.2;
+  scene.add(ring);
+
+  function makeSpriteTex(){
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(32,32,0,32,32,32);
+    g.addColorStop(0,'rgba(255,255,255,1)'); g.addColorStop(.35,'rgba(255,255,255,.6)');
+    g.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,64,64);
+    return new THREE.CanvasTexture(c);
+  }
+
+  let mx = 0, my = 0;
+  addEventListener('mousemove', e => {
+    mx = (e.clientX/innerWidth - .5) * 2;
+    my = (e.clientY/innerHeight - .5) * 2;
+  });
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  const clock = new THREE.Clock();
+  (function animate(){
+    requestAnimationFrame(animate);
+    const t = clock.getElapsedTime();
+    helixGroup.rotation.y = t * .22;
+    helixGroup.rotation.z = Math.sin(t*.15) * .06;
+    const arr = dGeo.attributes.position.array;
+    for (let i = 0; i < dCount; i++){
+      arr[i*3+1] += dSpeed[i];
+      if (arr[i*3+1] > 350) arr[i*3+1] = -350;
+    }
+    dGeo.attributes.position.needsUpdate = true;
+    ring.scale.setScalar(1 + Math.sin(t*1.4)*.08);
+    ring.material.opacity = .08 + Math.abs(Math.sin(t*1.4))*.08;
+    camera.position.x += (mx*36 - camera.position.x) * .04;
+    camera.position.y += (-my*26 - camera.position.y) * .04;
+    camera.lookAt(60, 0, 0);
+    renderer.render(scene, camera);
+  })();
+})();
+
+/* ================= 问卷逻辑 ================= */
+const steps = [
+  { key:'base', title:'基础信息', sub:'让我们先了解您的基本情况', fields:[
+    { id:'name',  label:'姓名', type:'text', ph:'请输入姓名' },
+    { id:'gender',label:'性别', type:'select', opts:['男','女'] },
+    { id:'age',   label:'年龄', type:'number', unit:'岁', min:10, max:100 },
+    { id:'height',label:'身高', type:'number', unit:'cm', min:120, max:220 },
+    { id:'weight',label:'体重', type:'number', unit:'kg', min:30, max:200 },
+  ]},
+  { key:'vital', title:'生理指标', sub:'请尽量填写最近一次测量的数值（不清楚可留默认）', fields:[
+    { id:'sbp',  label:'收缩压（高压）', type:'number', unit:'mmHg', def:120 },
+    { id:'dbp',  label:'舒张压（低压）', type:'number', unit:'mmHg', def:80 },
+    { id:'hr',   label:'静息心率', type:'number', unit:'次/分', def:72 },
+    { id:'glu',  label:'空腹血糖', type:'number', unit:'mmol/L', def:5.2, step:'0.1' },
+    { id:'spo2', label:'血氧饱和度', type:'number', unit:'%', def:98 },
+    { id:'waist',label:'腰围', type:'number', unit:'cm', def:80 },
+  ]},
+  { key:'life', title:'生活方式', sub:'请选择最符合您日常习惯的选项', fields:[
+    { id:'sleepH', label:'每日睡眠时长', type:'opts', opts:['< 6 小时','6–8 小时','8–9 小时','> 9 小时'], vals:[50,100,80,55] },
+    { id:'sleepQ', label:'睡眠质量', type:'opts', opts:['很好，一觉到天亮','偶尔醒来','经常失眠/多梦'], vals:[100,65,30] },
+    { id:'exercise', label:'每周运动频率', type:'opts', opts:['≥ 5 次','3–4 次','1–2 次','几乎不运动'], vals:[100,80,50,20] },
+    { id:'veggie', label:'每日蔬果摄入', type:'opts', opts:['≥ 500g','300–500g','< 300g','很少吃'], vals:[100,75,45,20] },
+    { id:'water', label:'每日饮水量', type:'opts', opts:['≥ 1.5L','1–1.5L','< 1L'], vals:[100,70,40] },
+    { id:'sit', label:'每日久坐时长', type:'opts', opts:['< 4 小时','4–8 小时','> 8 小时'], vals:[100,60,30] },
+    { id:'smoke', label:'吸烟情况', type:'opts', opts:['从不吸烟','已戒烟','偶尔吸烟','经常吸烟'], vals:[100,85,45,15] },
+    { id:'drink', label:'饮酒情况', type:'opts', opts:['不饮酒','偶尔少量','经常饮酒'], vals:[100,70,30] },
+  ]},
+  { key:'mental', title:'心理状态', sub:'根据最近两周的真实感受作答', fields:[
+    { id:'stress', label:'日常压力水平', type:'opts', opts:['很轻松','适中','压力较大','不堪重负'], vals:[100,75,45,20] },
+    { id:'mood', label:'情绪低落频率', type:'opts', opts:['几乎没有','偶尔','经常','几乎每天'], vals:[100,75,40,15] },
+    { id:'anxiety', label:'紧张焦虑频率', type:'opts', opts:['几乎没有','偶尔','经常','几乎每天'], vals:[100,75,40,15] },
+    { id:'satisfy', label:'生活满意度', type:'opts', opts:['非常满意','比较满意','一般','不满意'], vals:[100,78,50,25] },
+  ]},
+  { key:'history', title:'健康史', sub:'以下信息将用于综合风险评估', fields:[
+    { id:'chronic', label:'慢性疾病', type:'opts', opts:['无','有 1 种（如高血压/糖尿病）','有 2 种及以上'], vals:[100,55,25] },
+    { id:'family', label:'家族病史（心脑血管/肿瘤/糖尿病）', type:'opts', opts:['无','有 1 位直系亲属','多位直系亲属'], vals:[100,65,35] },
+    { id:'allergy', label:'过敏史', type:'opts', opts:['无','有（食物/药物等）'], vals:[100,80] },
+    { id:'checkup', label:'定期体检习惯', type:'opts', opts:['每年体检','1–2 年一次','3 年以上未体检','从未体检'], vals:[100,75,40,20] },
+  ]},
+];
+
+let cur = 0;
+const answers = {};
+
+function startQuiz(){
+  document.getElementById('heroSection').classList.add('hidden');
+  document.getElementById('quizWrap').classList.remove('hidden');
+  cur = 0; renderStep();
+  document.getElementById('quizWrap').scrollIntoView({ behavior:'smooth' });
+}
+
+function renderStep(){
+  const s = steps[cur];
+  const pct = Math.round(((cur+1)/steps.length)*100);
+  document.getElementById('progBar').style.width = pct + '%';
+  document.getElementById('progText').textContent = `第 ${cur+1} / ${steps.length} 步 · ${s.title}`;
+  document.getElementById('progPct').textContent = pct + '%';
+
+  let html = `<div class="step-title">${s.title}</div><div class="step-sub">${s.sub}</div><div class="grid2">`;
+  s.fields.forEach(f => {
+    if (f.type === 'opts'){
+      html += `<div class="field" style="grid-column:1/-1"><label>${f.label}</label><div class="opt-group" id="og_${f.id}">` +
+        f.opts.map((o,i)=>`<div class="opt${answers[f.id]===i?' sel':''}" data-f="${f.id}" data-v="${i}" onclick="pickOpt(this)">${o}</div>`).join('') + `</div></div>`;
+    } else if (f.type === 'select'){
+      html += `<div class="field"><label>${f.label}</label><select id="in_${f.id}">` +
+        f.opts.map(o=>`<option${answers[f.id]===o?' selected':''}>${o}</option>`).join('') + `</select></div>`;
+    } else {
+      const val = answers[f.id] !== undefined ? answers[f.id] : (f.def !== undefined ? f.def : '');
+      const unit = f.unit ? `<div class="unit"><input id="in_${f.id}" type="${f.type}" placeholder="${f.ph||''}" value="${val}" ${f.step?`step="${f.step}"`:''}><span>${f.unit}</span></div>`
+                          : `<input id="in_${f.id}" type="${f.type}" placeholder="${f.ph||''}" value="${val}">`;
+      html += `<div class="field"><label>${f.label}</label>${unit}</div>`;
+    }
+  });
+  html += `</div><div class="step-nav">
+    ${cur>0 ? '<button class="btn-ghost" onclick="prevStep()">← 上一步</button>' : '<span></span>'}
+    <button class="btn-next" onclick="nextStep()">${cur === steps.length-1 ? '生成健康报告 →' : '下一步 →'}</button>
+  </div>`;
+  const card = document.getElementById('stepCard');
+  card.innerHTML = html;
+  card.style.animation = 'none'; void card.offsetWidth; card.style.animation = '';
+}
+
+function pickOpt(el){
+  const f = el.dataset.f;
+  document.querySelectorAll(`#og_${f} .opt`).forEach(o=>o.classList.remove('sel'));
+  el.classList.add('sel');
+  answers[f] = +el.dataset.v;
+}
+
+function collectInputs(){
+  let ok = true;
+  steps[cur].fields.forEach(f => {
+    if (f.type === 'opts'){
+      if (answers[f.id] === undefined) ok = false;
+    } else {
+      const el = document.getElementById('in_' + f.id);
+      if (!el) return;
+      if (f.type === 'number'){
+        const v = parseFloat(el.value);
+        if (isNaN(v) || (f.min && v < f.min) || (f.max && v > f.max)) { ok = false; el.style.borderColor = '#ff5c7a'; }
+        else { answers[f.id] = v; el.style.borderColor = ''; }
+      } else {
+        if (f.id === 'name' && !el.value.trim()){ ok = false; el.style.borderColor = '#ff5c7a'; }
+        else { answers[f.id] = el.value.trim(); el.style.borderColor = ''; }
+      }
+    }
+  });
+  return ok;
+}
+
+function nextStep(){
+  if (!collectInputs()){
+    shake(); return;
+  }
+  if (cur < steps.length - 1){ cur++; renderStep(); window.scrollTo({top:0,behavior:'smooth'}); }
+  else finish();
+}
+function prevStep(){ if (cur>0){ cur--; renderStep(); } }
+function shake(){
+  const card = document.getElementById('stepCard');
+  card.style.transform = 'translateX(-8px)';
+  setTimeout(()=>card.style.transform = 'translateX(8px)', 70);
+  setTimeout(()=>card.style.transform = 'translateX(0)', 150);
+}
+
+/* ================= 评分引擎 ================= */
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+function scoreRange(v, ranges){ // ranges: [{min,max,score}]
+  for (const r of ranges){ if (v >= r.min && v <= r.max) return r.score; }
+  return 40;
+}
+
+function compute(){
+  const a = answers;
+  // —— 生理维度（100分制）——
+  const bmi = a.weight / Math.pow(a.height/100, 2);
+  const bmiS = scoreRange(bmi, [
+    {min:0, max:18.4, score:70}, {min:18.5, max:23.9, score:100},
+    {min:24, max:27.9, score:72}, {min:28, max:50, score:45}]);
+  const bpS = (scoreRange(a.sbp, [
+    {min:0, max:119, score:100}, {min:120, max:139, score:78},
+    {min:140, max:159, score:50}, {min:160, max:300, score:25}]) +
+    scoreRange(a.dbp, [
+    {min:0, max:79, score:100}, {min:80, max:89, score:80},
+    {min:90, max:99, score:52}, {min:100, max:200, score:25}])) / 2;
+  const hrS = scoreRange(a.hr, [
+    {min:0, max:59, score:75}, {min:60, max:100, score:100},
+    {min:101, max:120, score:55}, {min:121, max:300, score:30}]);
+  const gluS = scoreRange(a.glu, [
+    {min:0, max:3.8, score:60}, {min:3.9, max:6.1, score:100},
+    {min:6.2, max:7.0, score:60}, {min:7.1, max:30, score:25}]);
+  const spo2S = scoreRange(a.spo2, [
+    {min:0, max:93, score:30}, {min:94, max:95, score:70}, {min:96, max:100, score:100}]);
+  const waistLimit = a.gender === '男' ? 90 : 85;
+  const waistS = a.waist <= waistLimit - 10 ? 95 : a.waist <= waistLimit ? 85 : a.waist <= waistLimit + 8 ? 55 : 30;
+  const vital = Math.round((bmiS*.22 + bpS*.24 + hrS*.12 + gluS*.18 + spo2S*.12 + waistS*.12) );
+
+  // —— 生活方式 ——
+  const lifeFields = ['sleepH','sleepQ','exercise','veggie','water','sit','smoke','drink'];
+  const lifeW = [0.16,0.12,0.18,0.12,0.08,0.10,0.14,0.10];
+  let life = 0;
+  lifeFields.forEach((f,i)=>{ life += steps[2].fields.find(x=>x.id===f).vals[a[f]] * lifeW[i]; });
+  life = Math.round(life);
+
+  // —— 心理健康 ——
+  const mental = Math.round((
+    steps[3].fields.find(x=>x.id==='stress').vals[a.stress]*.28 +
+    steps[3].fields.find(x=>x.id==='mood').vals[a.mood]*.26 +
+    steps[3].fields.find(x=>x.id==='anxiety').vals[a.anxiety]*.26 +
+    steps[3].fields.find(x=>x.id==='satisfy').vals[a.satisfy]*.20));
+
+  // —— 健康史（分数越高代表风险越低/管理越好）——
+  const history = Math.round((
+    steps[4].fields.find(x=>x.id==='chronic').vals[a.chronic]*.40 +
+    steps[4].fields.find(x=>x.id==='family').vals[a.family]*.22 +
+    steps[4].fields.find(x=>x.id==='allergy').vals[a.allergy]*.08 +
+    steps[4].fields.find(x=>x.id==='checkup').vals[a.checkup]*.30));
+
+  // —— 综合：生理 .4 + 生活 .3 + 心理 .2 + 病史 .1 ——
+  const total = Math.round(vital*.4 + life*.3 + mental*.2 + history*.1);
+  return { total, vital, life, mental, history, bmi };
+}
+
+function gradeOf(t){
+  if (t >= 85) return { g:'A', t:'优秀 · 健康活力型', txt:'您的整体健康状况非常出色！各维度表现均衡，请继续保持当前的生活方式，并坚持每年定期体检。' };
+  if (t >= 70) return { g:'B', t:'良好 · 稳健保健型', txt:'您的健康状况总体良好，但个别维度存在提升空间。建议关注下方提示的风险点，及时调整生活习惯。' };
+  if (t >= 55) return { g:'C', t:'关注 · 亚健康预警型', txt:'您已处于亚健康状态，多项指标亮起黄灯。建议尽快调整作息与饮食，必要时前往医疗机构做进一步检查。' };
+  return { g:'D', t:'预警 · 健康干预型', txt:'您的健康风险较高，多个维度需要重点干预。强烈建议尽快进行专业体检，并咨询医生或健康管理师制定干预方案。' };
+}
+
+function buildRecs(r){
+  const a = answers, recs = [];
+  const bmi = r.bmi;
+  if (bmi >= 24) recs.push(['⚖️','体重管理',`您的 BMI 为 ${bmi.toFixed(1)}，超出正常范围（18.5–23.9）。建议控制每日总热量摄入，增加有氧运动，目标每周减重 0.5–1kg。`]);
+  else if (bmi < 18.5) recs.push(['🍚','营养改善',`您的 BMI 为 ${bmi.toFixed(1)}，体重偏低。建议增加优质蛋白（蛋、奶、鱼、豆）摄入，配合力量训练增肌。`]);
+  if (a.sbp >= 140 || a.dbp >= 90) recs.push(['🩺','血压预警',`您的血压为 ${a.sbp}/${a.dbp} mmHg，已达高血压范围。建议每日限盐 < 5g，监测血压并尽早就医评估。`]);
+  else if (a.sbp >= 120 || a.dbp >= 80) recs.push(['🧂','血压关注',`您的血压为 ${a.sbp}/${a.dbp} mmHg，处于正常高值。建议低盐饮食、规律运动，每 3 个月复测血压。`]);
+  if (a.glu > 6.1) recs.push(['🍬','血糖预警',`您的空腹血糖为 ${a.glu} mmol/L，高于正常上限 6.1。建议减少精制糖摄入，尽快进行 OGTT 糖耐量检查。`]);
+  if (a.hr > 100 || a.hr < 60) recs.push(['💓','心率提示',`您的静息心率为 ${a.hr} 次/分，超出常见范围（60–100）。如无运动员背景，建议就医检查。`]);
+  if (a.spo2 < 96) recs.push(['🫁','血氧关注',`您的血氧饱和度为 ${a.spo2}%，低于正常水平。如伴胸闷气短，请及时就医。`]);
+  if (steps[2].fields.find(x=>x.id==='sleepH').vals[a.sleepH] < 70) recs.push(['😴','睡眠改善','您的睡眠时长不足或过长。建议固定作息，每日保证 7–8 小时睡眠，睡前 1 小时远离电子屏幕。']);
+  if (steps[2].fields.find(x=>x.id==='exercise').vals[a.exercise] < 60) recs.push(['🏃','运动不足','WHO 建议每周至少 150 分钟中等强度运动。可从每天快走 30 分钟开始，逐步养成运动习惯。']);
+  if (steps[2].fields.find(x=>x.id==='smoke').vals[a.smoke] < 60) recs.push(['🚭','戒烟干预','吸烟是心脑血管病与癌症的首要可控危险因素。建议制定戒烟计划，可寻求戒烟门诊帮助。']);
+  if (steps[2].fields.find(x=>x.id==='drink').vals[a.drink] < 80) recs.push(['🍷','限酒建议','酒精无安全剂量。建议男性每日酒精摄入 ≤ 25g，女性 ≤ 15g，并逐步减量。']);
+  if (steps[2].fields.find(x=>x.id==='veggie').vals[a.veggie] < 70) recs.push(['🥦','膳食优化','建议每日摄入蔬菜 300–500g、水果 200–350g，做到餐餐有蔬菜、天天有水果。']);
+  if (steps[2].fields.find(x=>x.id==='sit').vals[a.sit] < 70) recs.push(['🪑','久坐危害','久坐是独立的慢性病危险因素。建议每坐 1 小时起身活动 5 分钟，可设置站立办公时段。']);
+  if (r.mental < 70) recs.push(['🧘','心理调适','您的心理状态需要关注。建议规律运动、正念冥想，多与亲友倾诉；如情绪持续低落超过两周，请寻求心理咨询。']);
+  if (steps[4].fields.find(x=>x.id==='chronic').vals[a.chronic] < 80) recs.push(['💊','慢病管理','您已确诊慢性疾病，请遵医嘱规律服药、定期复诊，切勿自行停药或更改剂量。']);
+  if (steps[4].fields.find(x=>x.id==='family').vals[a.family] < 80) recs.push(['🧬','家族史关注','您有明确家族病史，建议针对相关疾病进行早期筛查（如胃肠镜、肿瘤标志物），比常规人群提前 5–10 年。']);
+  if (steps[4].fields.find(x=>x.id==='checkup').vals[a.checkup] < 80) recs.push(['📅','体检计划','建议建立年度体检习惯：基础项目 + 血压、血糖、血脂、肝肾功能，40 岁以上增加心脑血管与肿瘤筛查。']);
+  if (recs.length === 0) recs.push(['🌟','保持现状','您的各项指标都非常优秀！请继续保持均衡饮食、规律运动与良好心态，每年做一次全面体检即可。']);
+  return recs;
+}
+
+/* ================= 结果渲染 ================= */
+let radarObj = null;
+function finish(){
+  const r = compute();
+  const g = gradeOf(r.total);
+  document.getElementById('quizWrap').classList.add('hidden');
+  document.getElementById('resultWrap').classList.remove('hidden');
+  window.scrollTo({top:0, behavior:'smooth'});
+
+  // 总分动画
+  let n = 0; const el = document.getElementById('totalScore');
+  const timer = setInterval(()=>{ n += Math.ceil(r.total/40); if (n >= r.total){ n = r.total; clearInterval(timer); } el.textContent = n; }, 30);
+  setTimeout(()=>{ document.getElementById('ringFg').style.transition = 'stroke-dashoffset 1.4s cubic-bezier(.5,0,.2,1)';
+    document.getElementById('ringFg').style.strokeDashoffset = 515 * (1 - r.total/100); }, 100);
+
+  const badge = document.getElementById('gradeBadge');
+  badge.className = 'grade ' + g.g;
+  badge.textContent = `${g.g} 级 · ${g.t}`;
+  document.getElementById('summaryText').textContent =
+    `${answers.name || '朋友'}，您的综合健康指数为 ${r.total} 分。${g.txt}`;
+
+  // 生理小卡
+  const chips = [
+    ['BMI', r.bmi.toFixed(1), r.bmi>=18.5&&r.bmi<24],
+    ['血压', `${answers.sbp}/${answers.dbp}`, answers.sbp<140&&answers.dbp<90],
+    ['心率', answers.hr, answers.hr>=60&&answers.hr<=100],
+    ['空腹血糖', answers.glu, answers.glu<=6.1],
+    ['血氧', answers.spo2+'%', answers.spo2>=96],
+  ];
+  document.getElementById('vitalsChips').innerHTML = chips.map(([k,v,ok]) =>
+    `<span class="vital-chip">${k} <b style="color:${ok?'#3fe0a0':'#ffc44d'}">${v}</b> ${ok?'✓':'⚠'}</span>`).join('');
+
+  // 雷达图
+  const dims = ['生理机能','生活方式','心理健康','健康史管理','综合体质'];
+  const vals = [r.vital, r.life, r.mental, r.history, r.total];
+  if (radarObj) radarObj.destroy();
+  radarObj = new Chart(document.getElementById('radarChart'), {
+    type:'radar',
+    data:{ labels:dims, datasets:[{
+      label:'得分', data:vals, fill:true,
+      backgroundColor:'rgba(79,140,255,.25)', borderColor:'#6ee7ff',
+      pointBackgroundColor:'#6ee7ff', pointBorderColor:'#fff', pointRadius:4 }]},
+    options:{ scales:{ r:{ min:0, max:100, ticks:{display:false},
+      grid:{color:'rgba(120,170,255,.18)'}, angleLines:{color:'rgba(120,170,255,.18)'},
+      pointLabels:{ color:'#9db8dd', font:{size:13} } } },
+      plugins:{ legend:{display:false} } }
+  });
+
+  // 维度条
+  const barColors = ['#6ee7ff','#3fe0a0','#b18cff','#ffc44d','#4f8cff'];
+  document.getElementById('dimList').innerHTML = dims.map((d,i)=>
+    `<div class="dim-row"><span class="dname">${d}</span>
+      <div class="dim-bar"><i data-w="${vals[i]}" style="background:${barColors[i]};box-shadow:0 0 10px ${barColors[i]}66"></i></div>
+      <span class="dval" style="color:${barColors[i]}">${vals[i]}</span></div>`).join('');
+  setTimeout(()=>document.querySelectorAll('.dim-bar i').forEach(b=>b.style.width = b.dataset.w + '%'), 200);
+
+  // 建议
+  const recs = buildRecs(r);
+  document.getElementById('recList').innerHTML = recs.map(([icon,title,txt]) =>
+    `<div class="rec-item"><div class="rec-icon">${icon}</div><div><b style="color:#bfe9ff">${title}</b><br>${txt}</div></div>`).join('');
+
+  // 绑定PDF下载
+  document.getElementById('btnPdf').onclick = () => downloadPDF(r, g, recs, vals);
+}
+
+/* ================= PDF 报告生成 ================= */
+function downloadPDF(r, g, recs, vals){
+  if (typeof html2canvas === 'undefined' || !window.jspdf || !window.jspdf.jsPDF){
+    alert('PDF 组件未能加载（可能网络较慢），请刷新页面后重试。');
+    return;
+  }
+  const btn = document.getElementById('btnPdf');
+  btn.textContent = '⏳ 正在生成报告…'; btn.disabled = true;
+  const date = new Date().toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric' });
+  const radarImg = document.getElementById('radarChart').toDataURL('image/png', 1);
+  const dims = ['生理机能','生活方式','心理健康','健康史管理','综合体质'];
+  const barColors = ['#2b6cb0','#2f9e6e','#7c5cbf','#c9a227','#3562a6'];
+
+  document.getElementById('reportDoc').innerHTML = `
+    <div class="rhead"><h1>VitaScan 360° 健康体测报告</h1>
+      <div class="rmeta">报告编号：VS${Date.now().toString().slice(-8)}<br>生成日期：${date}</div></div>
+    <div class="rsection"><h2>一、受检人信息</h2>
+      <table><tr><th>姓名</th><td>${answers.name || '—'}</td><th>性别</th><td>${answers.gender}</td></tr>
+      <tr><th>年龄</th><td>${answers.age} 岁</td><th>身高 / 体重</th><td>${answers.height} cm / ${answers.weight} kg</td></tr></table></div>
+    <div class="rsection"><h2>二、综合评估</h2>
+      <div class="rscore"><div><span class="big">${r.total}</span> <span style="color:#4a5568">/ 100 分</span></div>
+        <div style="font-size:14px;color:#2d3748;line-height:1.8"><b>评级：${g.g} 级 · ${g.t}</b><br>${g.txt}</div></div></div>
+    <div class="rsection"><h2>三、生理指标</h2>
+      <table><tr><th>项目</th><th>结果</th><th>参考范围</th><th>判定</th></tr>
+      <tr><td>体质指数 BMI</td><td>${r.bmi.toFixed(1)}</td><td>18.5 – 23.9</td><td>${r.bmi>=18.5&&r.bmi<24?'正常':'异常'}</td></tr>
+      <tr><td>血压</td><td>${answers.sbp} / ${answers.dbp} mmHg</td><td>&lt; 140/90 mmHg</td><td>${answers.sbp<140&&answers.dbp<90?'正常':'偏高'}</td></tr>
+      <tr><td>静息心率</td><td>${answers.hr} 次/分</td><td>60 – 100 次/分</td><td>${answers.hr>=60&&answers.hr<=100?'正常':'异常'}</td></tr>
+      <tr><td>空腹血糖</td><td>${answers.glu} mmol/L</td><td>3.9 – 6.1 mmol/L</td><td>${answers.glu<=6.1&&answers.glu>=3.9?'正常':'异常'}</td></tr>
+      <tr><td>血氧饱和度</td><td>${answers.spo2} %</td><td>≥ 96 %</td><td>${answers.spo2>=96?'正常':'偏低'}</td></tr>
+      <tr><td>腰围</td><td>${answers.waist} cm</td><td>男 &lt; 90 / 女 &lt; 85</td><td>${answers.waist <= (answers.gender==='男'?90:85)?'正常':'超标'}</td></tr></table></div>
+    <div class="rsection"><h2>四、五维健康画像</h2>
+      <div id="reportChartWrap"><img src="${radarImg}"></div>
+      <table style="margin-top:14px"><tr><th>维度</th>${dims.map(d=>`<th>${d}</th>`).join('')}</tr>
+      <tr><td><b>得分</b></td>${vals.map((v,i)=>`<td style="color:${barColors[i]};font-weight:700">${v}</td>`).join('')}</tr></table></div>
+    <div class="rsection"><h2>五、个性化健康建议</h2>
+      <div class="rrec"><ul>${recs.map(([icon,title,txt])=>`<li><b>${title}：</b>${txt}</li>`).join('')}</ul></div></div>
+    <div class="rdisclaimer">免责声明：本报告基于受检人自填信息与公开健康管理指南生成，仅供健康风险参考，不构成医疗诊断。如有不适请及时就医。<br>VitaScan 360° 智能健康体测平台 · 健康服务与管理</div>`;
+
+  // 导出：先让模板在正常文档流中排版（克隆阶段再修正定位），再手动分页写入 jsPDF
+  const doc = document.getElementById('reportDoc');
+  const prevStyle = { position: doc.style.position, left: doc.style.left, top: doc.style.top, zIndex: doc.style.zIndex, width: doc.style.width };
+  doc.style.position = 'absolute';
+  doc.style.left = '0';
+  doc.style.top = '0';
+  doc.style.zIndex = '-999';
+  doc.style.width = '794px';
+
+  const restore = () => {
+    doc.style.position = prevStyle.position;
+    doc.style.left = prevStyle.left;
+    doc.style.top = prevStyle.top;
+    doc.style.zIndex = prevStyle.zIndex;
+    doc.style.width = prevStyle.width;
+    btn.textContent = '⬇ 下载体检报告 (PDF)'; btn.disabled = false;
+  };
+  const filename = `VitaScan健康报告_${answers.name || 'guest'}_${new Date().toISOString().slice(0,10)}.pdf`;
+
+  // 等待雷达图 <img> 加载完成再截图，避免图片缺失
+  const imgs = Array.from(doc.querySelectorAll('img'));
+  Promise.all(imgs.map(im => im.complete ? Promise.resolve() :
+    new Promise(res => { im.onload = im.onerror = res; })
+  )).then(() => html2canvas(doc, {
+    scale: 2,
+    backgroundColor: '#ffffff',
+    useCORS: true,
+    logging: false,
+    scrollX: 0,
+    scrollY: 0,
+    width: doc.scrollWidth,
+    height: doc.scrollHeight,
+    windowWidth: doc.scrollWidth,
+    windowHeight: doc.scrollHeight,
+    onclone: (clonedDoc) => {
+      const el = clonedDoc.getElementById('reportDoc');
+      // 在克隆文档里恢复为正常静态布局，彻底规避视口/定位裁剪导致的空白
+      el.style.position = 'static';
+      el.style.left = '0';
+      el.style.top = '0';
+      el.style.zIndex = 'auto';
+      el.style.display = 'block';
+      el.style.visibility = 'visible';
+    }
+  })).then(canvas => {
+    if (!canvas || canvas.width === 0 || canvas.height === 0) throw new Error('empty canvas');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const margin = 10, pageW = 210, pageH = 297;
+    const imgW = pageW - margin * 2;
+    const pxPerMm = canvas.width / imgW;
+    const pagePxH = Math.floor((pageH - margin * 2) * pxPerMm);
+    const slice = document.createElement('canvas');
+    const sctx = slice.getContext('2d');
+    let rendered = 0, page = 0;
+    while (rendered < canvas.height) {
+      const sliceH = Math.min(pagePxH, canvas.height - rendered);
+      slice.width = canvas.width; slice.height = sliceH;
+      sctx.fillStyle = '#ffffff'; sctx.fillRect(0, 0, slice.width, sliceH);
+      sctx.drawImage(canvas, 0, rendered, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+      if (page > 0) pdf.addPage();
+      pdf.addImage(slice.toDataURL('image/jpeg', 0.95), 'JPEG', margin, margin, imgW, sliceH / pxPerMm);
+      rendered += sliceH; page++;
+    }
+    pdf.save(filename);
+    restore();
+  }).catch(err => {
+    console.error('PDF 生成失败：', err);
+    restore();
+    alert('PDF 生成失败，请按 Ctrl+F5 强制刷新页面后重试。');
+  });
+}
+</script>
+</body>
+</html>
